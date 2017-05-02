@@ -647,7 +647,7 @@ class Evaluation :
 
         # run solver
         t = time.time()
-        print '\n-> Fit model using "%s":', solver
+        print '\n-> Fit model using "%s":' % solver
         Y = self.niiDWI_img[ self.DICTIONARY['MASK_ix'], self.DICTIONARY['MASK_iy'], self.DICTIONARY['MASK_iz'], : ].flatten().astype(np.float64)
 
         if solver == "nnls" :
