@@ -67,21 +67,21 @@ def init_regularisation(thenorm = 2):
     regularisation['structureIC'] = None
     regularisation['weightsIC'] = np.zeros_like(regularisation['sizeIC'], dtype=np.float64)
 
-    regularisation['startEC'] = 0
-    regularisation['sizeEC'] = np.array([0], dtype=np.int64)
-    regularisation['weightsEC'] = np.zeros_like(regularisation['sizeEC'], dtype=np.float64)
+    # regularisation['startEC'] = 0
+    # regularisation['sizeEC'] = np.array([0], dtype=np.int64)
+    # regularisation['weightsEC'] = np.zeros_like(regularisation['sizeEC'], dtype=np.float64)
 
-    regularisation['startISO'] = 0
-    regularisation['sizeISO'] = np.array([0], dtype=np.int64)
-    regularisation['weightsISO'] = np.zeros_like(regularisation['sizeISO'], dtype=np.float64)
+    # regularisation['startISO'] = 0
+    # regularisation['sizeISO'] = np.array([0], dtype=np.int64)
+    # regularisation['weightsISO'] = np.zeros_like(regularisation['sizeISO'], dtype=np.float64)
 
     regularisation['lambdaIC'] = 0.0
-    regularisation['lambdaEC'] = 0.0
-    regularisation['lambdaISO'] = 0.0
+    # regularisation['lambdaEC'] = 0.0
+    # regularisation['lambdaISO'] = 0.0
 
     regularisation['normIC'] = int(thenorm)
-    regularisation['normEC'] = int(thenorm)
-    regularisation['normISO'] = int(thenorm)
+    # regularisation['normEC'] = int(thenorm)
+    # regularisation['normISO'] = int(thenorm)
 
     return regularisation
 
@@ -199,9 +199,7 @@ def gnnls(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, 
     x0 = np.zeros( A.shape[1], dtype=np.float64 )
 
     lambdaIC = regularisation.get('lambdaIC')
-    lambdaEC = regularisation.get('lambdaEC')
-    lambdaISO = regularisation.get('lambdaISO')
-    if lambdaIC == 0.0: # and lambdaEC == 0.0 and lambdaISO == 0.0:
+    if lambdaIC == 0.0:
         return nnls(y, A, At, tol_fun, tol_x, max_iter, verbose)
 
     normIC      = regularisation.get('normIC')
@@ -209,22 +207,14 @@ def gnnls(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, 
     weightsIC   = regularisation.get('weightsIC')
     startIC     = regularisation.get('startIC')
 
-    # normEC    = regularisation.get('normEC')
-    # sizeEC    = regularisation.get('sizeEC')
-    # weightsEC = regularisation.get('weightsEC')
-    # startEC   = regularisation.get('startEC')
-    #
-    # normISO    = regularisation.get('normISO')
-    # sizeISO    = regularisation.get('sizeISO')
-    # weightsISO = regularisation.get('weightsISO')
-    # startISO   = regularisation.get('startISO')
+    # Input parse
+    if normIC != 1 and normIC!= 2:
+        raise ValueError('Only 1-norm and 2-norm are allowed for the regularisation term.')
+    if len(sizeIC) != len(weightsIC):
+        raise ValueError( 'weightsIC and sizeIC have different lengths.' )
 
-    omega = lambda x: omega_group(x, startIC,  sizeIC,  weightsIC,  lambdaIC,  normIC)# + \
-                    #   omega_group(x, startEC,  sizeEC,  weightsEC,  lambdaEC,  normEC) + \
-                    #   omega_group(x, startISO, sizeISO, weightsISO, lambdaISO, normISO)
-    prox  = lambda x:  prox_group(x, startIC,  sizeIC,  weightsIC,  lambdaIC,  normIC)# + \
-                    #    prox_group(x, startEC,  sizeEC,  weightsEC,  lambdaEC,  normEC) + \
-                    #    prox_group(x, startISO, sizeISO, weightsISO, lambdaISO, normISO)
+    omega = lambda x: omega_group(x, startIC,  sizeIC,  weightsIC,  lambdaIC,  normIC)
+    prox  = lambda x:  prox_group(x, startIC,  sizeIC,  weightsIC,  lambdaIC,  normIC)
 
     return __fista(y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, prox)
 
@@ -314,6 +304,12 @@ def hnnls(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, 
     normIC = regularisation.get('normIC')
     structureIC = regularisation.get('structureIC')
     weightsIC = regularisation.get('weightsIC')
+
+    if normIC != 1 and normIC!= 2:
+        raise ValueError('Only 1-norm and 2-norm are allowed for the regularisation term.')
+    if len(structureIC) != len(weightsIC):
+        raise ValueError( 'weightsIC and structureIC have different lengths.' )
+
     omega = lambda x: omega_tree( x, structureIC, weightsIC, lambdaIC, normIC )
     prox = lambda x: prox_tree( x, structureIC, weightsIC, lambdaIC, normIC )
 
@@ -322,6 +318,9 @@ def hnnls(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, 
 ## Regularisers for HNNLS
 # Penalty term
 cpdef omega_tree(np.ndarray[np.float64_t] v, np.ndarray[object] subtree, np.ndarray[np.float64_t] weight, double lam, double n) :
+    # Author: Matteo Frigo - lts5 @ EPFL
+    # References:
+    #     [1] `Jenatton et al. - Proximal Methods for Hierarchical Sparse Coding`
     cdef:
         int nG = weight.size
         size_t k, i
@@ -347,6 +346,9 @@ cpdef omega_tree(np.ndarray[np.float64_t] v, np.ndarray[object] subtree, np.ndar
 
 # Proximal operator of the penalty term
 cpdef np.ndarray[np.float64_t] prox_tree( np.ndarray[np.float64_t] x, np.ndarray[object] subtree, np.ndarray[np.float64_t] weight, double lam, double n ) :
+    # Author: Matteo Frigo - lts5 @ EPFL
+    # References:
+    #     [1] `Jenatton et al. - Proximal Methods for Hierarchical Sparse Coding`
     cdef:
         np.ndarray[np.float64_t] v
         int nG = weight.size, N, rho
@@ -382,23 +384,6 @@ cpdef np.ndarray[np.float64_t] prox_tree( np.ndarray[np.float64_t] x, np.ndarray
                 else:
                     for i in idx:
                         v[i] = 0.0
-        # if n == np.Inf:
-        #   for k in range(nG):
-        #     idx = subtree[k]
-        #     xn = max(v[idx])
-        #     r = lam*weight[k]
-        #     if xn <= r:
-        #       for i in idx:
-        #         v[i] = 0.0
-        #     else:
-        #       # Duchi, Shalen-Shwartz, Singer, Chandra - Efficient Projections onto the L1-Ball for Learning in High Dimensions
-        #       N = len(idx)
-        #       mu = np.sort(v[idx])[::-1]
-        #       csmu = np.cumsum(mu)
-        #       rho = np.nonzero( 0<mu*np.arange(1,N+1)-(csmu-r) )[0][-1]
-        #       theta = (csmu[rho]-r)/(rho+1.0)
-        #       for i in idx:
-        #         v[i] = max(0.0,v[i]-theta)
     return v
 
 
@@ -412,6 +397,12 @@ cpdef double omega_group(np.ndarray[np.float64_t] v, np.int64_t startC, np.ndarr
     #     *weightsC: ndarray of the same dimension of sizeC with the weights associated to each group of the compartment
     #     *lambdaC: regularisation parameter of the compartment
     #     *normC: only 1-norm and 2-norm are allowed
+    #
+    # Notes
+    # --------
+    # Author: Matteo Frigo - lts5 @ EPFL
+    # Acknowledgment: Rafael Carrillo - lts5 @ EPFL
+
 
 
     if lambdaC == 0.0 or sizeC[0]  == 0:
@@ -448,7 +439,11 @@ cpdef np.ndarray[np.float64_t] prox_group(np.ndarray[np.float64_t] x, np.int64_t
     #     *weightsC: ndarray of the same dimension of sizeC with the weights associated to each group of the compartment
     #     *lambdaC: regularisation parameter of the compartment
     #     *normC: only 1-norm and 2-norm are allowed
-
+    #
+    # Notes
+    # --------
+    # Author: Matteo Frigo - lts5 @ EPFL
+    # Acknowledgment: Rafael Carrillo - lts5 @ EPFL
     if lambdaC == 0.0 or sizeC[0] == 0:
         return x.copy()
 
@@ -461,7 +456,7 @@ cpdef np.ndarray[np.float64_t] prox_group(np.ndarray[np.float64_t] x, np.int64_t
     v[v<0] = 0.0
     if normC == 1 :
         for j in range(0,sizeC.size) :
-            idx1 = idx2 + 0
+            idx1 = idx2
             idx2 += sizeC[j]
             r = weightsC[j] * lambdaC
             for k in range(idx1,idx2) :
@@ -490,7 +485,7 @@ cpdef np.ndarray[np.float64_t] prox_group(np.ndarray[np.float64_t] x, np.int64_t
 
 
 ## General solver
-cpdef np.ndarray[np.float64_t] __fista( np.ndarray[np.float64_t] y, A, At, double tol_fun, double tol_x, int max_iter, float verbose, np.ndarray[np.float64_t] x0, omega, proximal) :
+cpdef np.ndarray[np.float64_t] __fista( np.ndarray[np.float64_t] y, A, At, double tol_fun, double tol_x, int max_iter, int verbose, np.ndarray[np.float64_t] x0, omega, proximal) :
     # Solve the regularised least squares problem
     #
     #     argmin_x 0.5*||y - A x||_2^2 + \Omega(x)
