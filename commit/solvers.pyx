@@ -196,7 +196,7 @@ def gnnls(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, 
     Author: Matteo Frigo - lts5 @ EPFL
     Acknowledgment: Rafael Carrillo - lts5 @ EPFL
     """
-    x0 = np.zeros( A.shape[1], dtype=np.float64 )
+    x0 = np.ones( A.shape[1], dtype=np.float64 )
 
     lambdaIC = regularisation.get('lambdaIC')
     if lambdaIC == 0.0:
@@ -213,8 +213,13 @@ def gnnls(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, 
     if len(sizeIC) != len(weightsIC):
         raise ValueError( 'weightsIC and sizeIC have different lengths.' )
 
-    omega = lambda x: omega_group(x, startIC,  sizeIC,  weightsIC,  lambdaIC,  normIC)
-    prox  = lambda x:  prox_group(x, startIC,  sizeIC,  weightsIC,  lambdaIC,  normIC)
+    b = np.cumsum(np.insert(sizeIC,0,0))
+    structureIC = np.array([range(b[k],b[k+1]) for k in range(0,len(b)-1)])
+    regularisation['structureIC'] = structureIC
+    del b
+
+    omega = lambda x: __omega_hierarchical( x, structureIC, weightsIC, lambdaIC, normIC )
+    prox  = lambda x:  __prox_hierarchical( x, structureIC, weightsIC, lambdaIC, normIC )
 
     return __fista(y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, prox)
 
@@ -289,7 +294,7 @@ def hnnls(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, 
     Author: Matteo Frigo - lts5 @ EPFL
     Acknowledgment: Rafael Carrillo - lts5 @ EPFL
     References:
-        [1] `Jenatton et al. - Proximal Methods for Hierarchical Sparse Coding`
+        [1] Jenatton et al. - `Proximal Methods for Hierarchical Sparse Coding`
     """
     x0 = np.ones( A.shape[1], dtype=np.float64 )
 
@@ -310,17 +315,19 @@ def hnnls(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, 
     if len(structureIC) != len(weightsIC):
         raise ValueError( 'weightsIC and structureIC have different lengths.' )
 
-    omega = lambda x: omega_tree( x, structureIC, weightsIC, lambdaIC, normIC )
-    prox = lambda x: prox_tree( x, structureIC, weightsIC, lambdaIC, normIC )
+    omega = lambda x: __omega_hierarchical( x, structureIC, weightsIC, lambdaIC, normIC )
+    prox  = lambda x:  __prox_hierarchical( x, structureIC, weightsIC, lambdaIC, normIC )
 
     return __fista(y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, prox)
 
 ## Regularisers for HNNLS
 # Penalty term
-cpdef omega_tree(np.ndarray[np.float64_t] v, np.ndarray[object] subtree, np.ndarray[np.float64_t] weight, double lam, double n) :
-    # Author: Matteo Frigo - lts5 @ EPFL
-    # References:
-    #     [1] `Jenatton et al. - Proximal Methods for Hierarchical Sparse Coding`
+cpdef __omega_hierarchical(np.ndarray[np.float64_t] v, np.ndarray[object] subtree, np.ndarray[np.float64_t] weight, double lam, double n) :
+    """
+    Author: Matteo Frigo - lts5 @ EPFL
+    References:
+        [1] Jenatton et al. - `Proximal Methods for Hierarchical Sparse Coding`
+    """
     cdef:
         int nG = weight.size
         size_t k, i
@@ -345,10 +352,12 @@ cpdef omega_tree(np.ndarray[np.float64_t] v, np.ndarray[object] subtree, np.ndar
     return lam*tmp
 
 # Proximal operator of the penalty term
-cpdef np.ndarray[np.float64_t] prox_tree( np.ndarray[np.float64_t] x, np.ndarray[object] subtree, np.ndarray[np.float64_t] weight, double lam, double n ) :
-    # Author: Matteo Frigo - lts5 @ EPFL
-    # References:
-    #     [1] `Jenatton et al. - Proximal Methods for Hierarchical Sparse Coding`
+cpdef np.ndarray[np.float64_t] __prox_hierarchical( np.ndarray[np.float64_t] x, np.ndarray[object] subtree, np.ndarray[np.float64_t] weight, double lam, double n ) :
+    """
+    Author: Matteo Frigo - lts5 @ EPFL
+    References:
+        [1] Jenatton et al. - `Proximal Methods for Hierarchical Sparse Coding`
+    """
     cdef:
         np.ndarray[np.float64_t] v
         int nG = weight.size, N, rho
@@ -386,120 +395,23 @@ cpdef np.ndarray[np.float64_t] prox_tree( np.ndarray[np.float64_t] x, np.ndarray
                         v[i] = 0.0
     return v
 
-
-## Regularisers for GNNLS
-# Penalty term
-cpdef double omega_group(np.ndarray[np.float64_t] v, np.int64_t startC, np.ndarray[np.int64_t] sizeC, np.ndarray[np.float64_t] weightsC, np.float64_t lambdaC, np.int64_t normC) :
-    # Input:
-    #     *v: vector of which we want to compute the proximal
-    #     *startC: index on which the compartment starts
-    #     *sizeC: ndarray with the length of each group in the compartment
-    #     *weightsC: ndarray of the same dimension of sizeC with the weights associated to each group of the compartment
-    #     *lambdaC: regularisation parameter of the compartment
-    #     *normC: only 1-norm and 2-norm are allowed
-    #
-    # Notes
-    # --------
-    # Author: Matteo Frigo - lts5 @ EPFL
-    # Acknowledgment: Rafael Carrillo - lts5 @ EPFL
-
-
-
-    if lambdaC == 0.0 or sizeC[0]  == 0:
-        return 0.0
-
-    cdef long idx1, idx2 = startC
-    cdef double xn, r, retval = 0.0
-    cdef size_t i, j, k
-
-    if normC == 1 :
-        for j in range(0,sizeC.size) :
-            idx1 = idx2
-            idx2 += sizeC[j]
-            xn = 0.0
-            for k in range(idx1,idx2) :
-                xn += v[k]
-            retval += weightsC[j]*xn
-    if normC == 2:
-        for j in range(0,sizeC.size):
-            idx1 = idx2
-            idx2 += sizeC[j]
-            xn = 0.0
-            for i in range(idx1,idx2):
-                xn += v[i]*v[i]
-            retval += weightsC[j]*sqrt(xn)
-    return retval
-
-
-# Proximal operator of the penalty term
-cpdef np.ndarray[np.float64_t] prox_group(np.ndarray[np.float64_t] x, np.int64_t startC, np.ndarray[np.int64_t] sizeC, np.ndarray[np.float64_t] weightsC, np.float64_t lambdaC, np.int64_t normC) :
-    # Input:
-    #     *v: vector of which we want to compute the proximal
-    #     *sizeC: ndarray with the length of each group in the compartment
-    #     *weightsC: ndarray of the same dimension of sizeC with the weights associated to each group of the compartment
-    #     *lambdaC: regularisation parameter of the compartment
-    #     *normC: only 1-norm and 2-norm are allowed
-    #
-    # Notes
-    # --------
-    # Author: Matteo Frigo - lts5 @ EPFL
-    # Acknowledgment: Rafael Carrillo - lts5 @ EPFL
-    if lambdaC == 0.0 or sizeC[0] == 0:
-        return x.copy()
-
-    cdef np.ndarray[np.float64_t] v
-    cdef long idx1, idx2 = startC
-    cdef double xn, r, t
-    cdef size_t i, j, k
-
-    v = x.copy()
-    v[v<0] = 0.0
-    if normC == 1 :
-        for j in range(0,sizeC.size) :
-            idx1 = idx2
-            idx2 += sizeC[j]
-            r = weightsC[j] * lambdaC
-            for k in range(idx1,idx2) :
-                if v[k] <= r:
-                    v[k] = 0.0
-                else :
-                    v[k] -= r
-    if normC == 2:
-        for j in range(0,sizeC.size):
-            idx1 = idx2
-            idx2 += sizeC[j]
-            xn = 0.0
-            for i in range(idx1,idx2) :
-                xn += v[i]*v[i]
-            xn = sqrt(xn)
-            if xn == 0 :
-                xn = 1.0
-
-            r = weightsC[j] * lambdaC
-
-            # Soft thresholding
-            t = max( xn-r, 0.0 )/xn
-            for i in range(idx1,idx2) :
-                x[i] *= t
-    return v
-
-
 ## General solver
 cpdef np.ndarray[np.float64_t] __fista( np.ndarray[np.float64_t] y, A, At, double tol_fun, double tol_x, int max_iter, int verbose, np.ndarray[np.float64_t] x0, omega, proximal) :
-    # Solve the regularised least squares problem
-    #
-    #     argmin_x 0.5*||y - A x||_2^2 + \Omega(x)
-    #
-    # with the FISTA algorithm described in [1].
-    #
-    # Notes
-    # -----
-    # Author: Matteo Frigo - lts5 @ EPFL
-    # Acknowledgment: Rafael Carrillo - lts5 @ EPFL
-    # References:
-    #     [1] `Beck & Teboulle - A Fast Iterative Shrinkage Thresholding
-    #         Algorithm for Linear Inverse Problems`
+    """
+    Solve the regularised least squares problem
 
+        argmin_x 0.5*||Ax-y||_2^2 + Omega(x)
+
+    with the FISTA algorithm described in [1].
+
+    Notes
+    -----
+    Author: Matteo Frigo - lts5 @ EPFL
+    Acknowledgment: Rafael Carrillo - lts5 @ EPFL
+    References:
+        [1] Beck & Teboulle - `A Fast Iterative Shrinkage Thresholding
+            Algorithm for Linear Inverse Problems`
+    """
 
 
     # Initialization
@@ -557,9 +469,6 @@ cpdef np.ndarray[np.float64_t] __fista( np.ndarray[np.float64_t] y, A, At, doubl
 
         # Backtracking
         while curr_obj > q :
-            if verbose >= 1 :
-                print "%4d  | BT" % iter
-
             # Smooth step
             mu = beta*mu
             x = xhat - mu*grad
