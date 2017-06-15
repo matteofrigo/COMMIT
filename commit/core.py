@@ -652,6 +652,10 @@ class Evaluation :
 
         if solver == "nnls" :
             self.x = commit.solvers.nnls( Y, self.A, self.A.T, tol_fun = tol_fun, tol_x = tol_x, max_iter = max_iter, verbose = verbose)
+        elif solver == "nnlsl1" :
+            if regularisation is {} or regularisation is None:
+                raise RuntimeError( 'Regularisation structure not properly defined. Check the documentation of commit.solvers.nnlsl1 .' )
+            self.x = commit.solvers.nnlsl1( Y, self.A, self.A.T, tol_fun = tol_fun, tol_x = tol_x, max_iter = max_iter, verbose = verbose, regularisation=regularisation)
         elif solver == "gnnls" :
             if regularisation is {} or regularisation is None:
                 raise RuntimeError( 'Regularisation structure not properly defined. Check the documentation of commit.solvers.gnnls .' )

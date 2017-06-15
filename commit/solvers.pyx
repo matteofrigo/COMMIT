@@ -227,7 +227,7 @@ def gnnls(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, 
 
 ## Interface for HNNLS solver
 def hnnls(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, regularisation = None) :
-    """Solve Hierarchical Non-Negative Least Squares (GNNLS)
+    """Solve Hierarchical Non-Negative Least Squares (HNNLS)
 
        min 0.5 * || y - Ax ||_2^2 + \Omega(x),      s.t. x >= 0
         where \Omega(x) is a regularisation functional of the form
@@ -320,6 +320,87 @@ def hnnls(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, 
 
     return __fista(y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, prox)
 
+def nnlsl1(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, regularisation = None) :
+    """Solve Non-Negative Least Squares with L1 regularization (NNLSL1)
+
+        min 0.5 * || y - Ax ||_2^2 + \lambda ||x||_1,      s.t. x >= 0.
+
+    If \lambda=0 the solver is equivalent to NNLS.
+
+    Parameters
+    ----------
+    y : 1-d array of doubles.
+        Signal to be fit.
+
+    A : matrix or object endowed with the .dot() method.
+        Dictionary describing the forward model.
+
+    At : matrix or class exposing the .dot() method.
+        Adjoint operator of A.
+
+    tol_fun : double, optional (default: 1e-4).
+        Minimum relative change of the objective value. The algorithm stops if:
+               | f(x(t)) - f(x(t-1)) | / f(x(t)) < tol_fun,
+        where x(t) is the estimate of the solution at iteration t.
+
+    tol_x : double, optional (default: 1e-6).
+        Minimum relative change of the solution x. The algorithm stops if:
+               || x(t) - x(t-1) || / || x(t) || < tol_x,
+        where x(t) is the estimate of the solution at iteration t.
+
+    max_iter : integer, optional (default: 1000).
+        Maximum number of iterations.
+
+    verbose : integer, optional (default: 1).
+        0 no log, 1 print each iteration results.
+
+    regularisation : python dictionary
+        Structure initialised by init_regularisation(). The only necessary
+        field is *lambdaIC
+
+    Returns
+    -------
+    x : 1-d array of doubles.
+        Minimizer of the NNLSL1 problem.
+
+    Notes
+    -----
+    Author: Matteo Frigo - lts5 @ EPFL
+    Acknowledgment: Rafael Carrillo - lts5 @ EPFL
+    References:
+        [1] Francis Bach et al. "Convex optimization with sparsity-inducing norms."
+    """
+    x0 = np.ones( A.shape[1], dtype=np.float64 )
+
+    if regularisation is None:
+        raise ValueError('The given tree structure is empty. Check the documentation.')
+
+    # TODO: regularisation of EC and ISO compartments
+    lambdaIC = regularisation.get('lambdaIC')
+    if lambdaIC == 0.0:
+        return nnls(y, A, At, tol_fun, tol_x, max_iter, verbose)
+
+    omega = lambda x: lambdaIC * sum(x)
+    prox  = lambda x:  __prox_nnl1( x, lambdaIC )
+
+    return __fista(y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, prox)
+
+
+## Regularisers for NNLSL1
+# Proximal
+cpdef np.ndarray[np.float64_t] __prox_nnl1(np.ndarray[np.float64_t] x, double lam) :
+    cdef:
+        np.ndarray[np.float64_t] v
+        size_t i
+    v = x.copy()
+    for i in range(v.size):
+        if v[i] <= lam:
+            v[i] = 0.0
+        else:
+            v[i] -= lam
+    return v
+
+
 ## Regularisers for HNNLS
 # Penalty term
 cpdef __omega_hierarchical(np.ndarray[np.float64_t] v, np.ndarray[object] subtree, np.ndarray[np.float64_t] weight, double lam, double n) :
@@ -337,7 +418,7 @@ cpdef __omega_hierarchical(np.ndarray[np.float64_t] v, np.ndarray[object] subtre
         if n == 1:
             for k in range(nG) :
                 idx = subtree[k]
-                tmp += weight[k] * max( v[idx] )
+                tmp += weight[k] * sum( v[idx] )
         elif n == 2:
             for k in range(nG):
                 idx = subtree[k]
@@ -348,7 +429,7 @@ cpdef __omega_hierarchical(np.ndarray[np.float64_t] v, np.ndarray[object] subtre
         elif n == np.Inf:
             for k in range(nG):
                 idx = subtree[k]
-                tmp += weight[k] * sum( v[idx] )
+                tmp += weight[k] * max( v[idx] )
     return lam*tmp
 
 # Proximal operator of the penalty term
