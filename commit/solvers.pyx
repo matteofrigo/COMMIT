@@ -63,7 +63,7 @@ def init_regularisation(thenorm = 2):
     """
     regularisation = {}
     regularisation['startIC'] = 0
-    regularisation['sizeIC'] = np.array([0], dtype=np.int64)
+    regularisation['sizeIC'] = None # Maybe np.array([0], dtype=np.int64) could be a more appropriate choice
     regularisation['structureIC'] = None
     regularisation['weightsIC'] = np.zeros_like(regularisation['sizeIC'], dtype=np.float64)
 
@@ -327,6 +327,11 @@ def nnlsl1(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1,
 
     If \lambda=0 the solver is equivalent to NNLS.
 
+    The regularisation term can be set only on the IC compartment selecting
+        regularisation['sizeIC'] = nIC
+    where *nIC is an integer that encodes the number of coefficients related
+    to the intracellular compartment ( x_IC = x[0:nIC] ).
+
     Parameters
     ----------
     y : 1-d array of doubles.
@@ -356,7 +361,7 @@ def nnlsl1(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1,
 
     regularisation : python dictionary
         Structure initialised by init_regularisation(). The only necessary
-        field is *lambdaIC
+        fields are *lambdaIC and *sizeIC
 
     Returns
     -------
@@ -380,20 +385,24 @@ def nnlsl1(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1,
     if lambdaIC == 0.0:
         return nnls(y, A, At, tol_fun, tol_x, max_iter, verbose)
 
+    sizeIC = regularisation.get('sizeIC')
+    if sizeIC == None:
+        sizeIC = len(x0)
+
     omega = lambda x: lambdaIC * sum(x)
-    prox  = lambda x:  __prox_nnl1( x, lambdaIC )
+    prox  = lambda x:  __prox_nnl1( x, lambdaIC, sizeIC )
 
     return __fista(y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, prox)
 
 
 ## Regularisers for NNLSL1
 # Proximal
-cpdef np.ndarray[np.float64_t] __prox_nnl1(np.ndarray[np.float64_t] x, double lam) :
+cpdef np.ndarray[np.float64_t] __prox_nnl1(np.ndarray[np.float64_t] x, double lam, int sizeIC) :
     cdef:
         np.ndarray[np.float64_t] v
         size_t i
     v = x.copy()
-    for i in range(v.size):
+    for i in range(sizeIC):
         if v[i] <= lam:
             v[i] = 0.0
         else:
