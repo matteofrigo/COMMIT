@@ -35,27 +35,27 @@ def init_regularisation(thenorm = 2):
         normIC : integer
             n-norm for the regularisation of the IC compartment
 
-    ~The following are intended to be useful in future verisons of the package~
+    ~The following are intended to be used carefully~
         startEC : integer
             index from which the ExtraCellular (EC) compartment starts.
-        sizeEC : np.array of integers
-            list of sizes of each group of the EC compartment (check gnnls).
-        weightsEC: np.array of float64
-            weights associated to each group encoded in sizeEC
+        sizeEC : integer or np.array
+            number of coefficients related to the EC compartment
+        # weightsEC: np.array of float64
+        #     weights associated to each group encoded in sizeEC
         lambdaEC : float64
             regularisation parameter for the EC compartment
-        normEC : integer
-            n-norm for the regularisation of the EC compartment
+        # normEC : integer
+        #     n-norm for the regularisation of the EC compartment
         startISO : integer
             index from which the isotropic (ISO) compartment starts.
-        sizeISO : np.array of integers
-            list of sizes of each group of the ISO compartment (check gnnls).
-        weightsISO: np.array of float64
-            weights associated to each group encoded in sizeISO
+        sizeISO : integer
+            number of coefficients related to the ISO compartment.
+        # weightsISO: np.array of float64
+        #     weights associated to each group encoded in sizeISO
         lambdaISO : float64
             regularisation parameter for the ISO compartment
-        normISO : integer
-            n-norm for the regularisation of the ISO compartment
+        # normISO : integer
+        #     n-norm for the regularisation of the ISO compartment
 
     Notes
     -----
@@ -65,23 +65,23 @@ def init_regularisation(thenorm = 2):
     regularisation['startIC'] = 0
     regularisation['sizeIC'] = None # Maybe np.array([0], dtype=np.int64) could be a more appropriate choice
     regularisation['structureIC'] = None
-    regularisation['weightsIC'] = np.zeros_like(regularisation['sizeIC'], dtype=np.float64)
+    regularisation['weightsIC'] = None # np.zeros_like(regularisation['sizeIC'], dtype=np.float64)
 
-    # regularisation['startEC'] = 0
-    # regularisation['sizeEC'] = np.array([0], dtype=np.int64)
-    # regularisation['weightsEC'] = np.zeros_like(regularisation['sizeEC'], dtype=np.float64)
+    regularisation['startEC'] = None
+    regularisation['sizeEC'] = None # Maybe np.array([0], dtype=np.int64) could be a more appropriate choice
+    # regularisation['weightsEC'] = None # np.zeros_like(regularisation['sizeEC'], dtype=np.float64)
 
-    # regularisation['startISO'] = 0
-    # regularisation['sizeISO'] = np.array([0], dtype=np.int64)
-    # regularisation['weightsISO'] = np.zeros_like(regularisation['sizeISO'], dtype=np.float64)
+    regularisation['startISO'] = None
+    regularisation['sizeISO'] = None # Maybe np.array([0], dtype=np.int64) could be a more appropriate choice
+    # regularisation['weightsISO'] = None # np.zeros_like(regularisation['sizeISO'], dtype=np.float64)
 
-    regularisation['lambdaIC'] = 0.0
-    # regularisation['lambdaEC'] = 0.0
-    # regularisation['lambdaISO'] = 0.0
+    regularisation['lambdaIC'] = None # DOUBLE REQUIRED
+    regularisation['lambdaEC'] = None # DOUBLE REQUIRED
+    regularisation['lambdaISO'] = None # DOUBLE REQUIRED
 
     regularisation['normIC'] = int(thenorm)
-    # regularisation['normEC'] = int(thenorm)
-    # regularisation['normISO'] = int(thenorm)
+    regularisation['normEC'] = int(thenorm)
+    regularisation['normISO'] = int(thenorm)
 
     return regularisation
 
@@ -380,29 +380,57 @@ def nnlsl1(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1,
     if regularisation is None:
         raise ValueError('The given tree structure is empty. Check the documentation.')
 
-    # TODO: regularisation of EC and ISO compartments
+
+    # Regularise IC compartment
     lambdaIC = regularisation.get('lambdaIC')
     if lambdaIC == 0.0:
         return nnls(y, A, At, tol_fun, tol_x, max_iter, verbose)
-
+    startIC = regularisation.get('startIC')
+    if startIC == None:
+        startIC = 0
     sizeIC = regularisation.get('sizeIC')
     if sizeIC == None:
         sizeIC = len(x0)
+    omegaIC = lambda x: lambdaIC * sum(x[startIC:sizeIC])
+    proxIC  = lambda x:  __prox_nnl1( x, lambdaIC, startIC, sizeIC )
 
-    omega = lambda x: lambdaIC * sum(x)
-    prox  = lambda x:  __prox_nnl1( x, lambdaIC, sizeIC )
+    # Regularise EC compartment
+    lambdaEC = regularisation.get('lambdaEC')
+    startEC = regularisation.get('startEC')
+    sizeEC = regularisation.get('sizeEC')
+    if (not lambdaEC == None) and (not startEC == None) and (not sizeEC == None):
+        omegaEC = lambda x: lambdaEC * sum(x[startEC:sizeEC])
+        proxEC  = lambda x:  __prox_nnl1( x, lambdaEC, startEC, sizeEC )
+    else:
+        omegaEC = lambda x: 0.0
+        proxEC  = lambda x: np.zeros_like(x)
+
+    # Regularise ISO compartment
+    lambdaISO = regularisation.get('lambdaISO')
+    startISO = regularisation.get('startISO')
+    sizeISO = regularisation.get('sizeISO')
+    if (not lambdaISO == None) and (not startISO == None) and (not sizeISO == None):
+        omegaISO = lambda x: lambdaISO * sum(x[startISO:sizeISO])
+        proxISO  = lambda x:  __prox_nnl1( x, lambdaISO, startISO, sizeISO )
+    else:
+        omegaISO = lambda x: 0.0
+        proxISO  = lambda x: np.zeros_like(x)
+
+    omega = lambda x: omegaIC(x) + omegaEC(x) + omegaISO(x)
+    prox  = lambda x: proxIC(x)  + proxEC(x)  + proxISO(x)
+
 
     return __fista(y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, prox)
 
 
 ## Regularisers for NNLSL1
 # Proximal
-cpdef np.ndarray[np.float64_t] __prox_nnl1(np.ndarray[np.float64_t] x, double lam, int sizeIC) :
+cpdef np.ndarray[np.float64_t] __prox_nnl1(np.ndarray[np.float64_t] x, double lam, int startIC, int sizeIC) :
     cdef:
         np.ndarray[np.float64_t] v
         size_t i
     v = x.copy()
-    for i in range(sizeIC):
+    for i in range(startIC, sizeIC):
         if v[i] <= lam:
             v[i] = 0.0
         else:
