@@ -323,14 +323,16 @@ def hnnls(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, 
 def nnlsl1(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, regularisation = None) :
     """Solve Non-Negative Least Squares with L1 regularization (NNLSL1)
 
-        min 0.5 * || y - Ax ||_2^2 + \lambda ||x||_1,      s.t. x >= 0.
+        min 0.5 * || y - Ax ||_2^2 + lambda_IC ||x_IC||_1
+                                   + lambda_EC ||x_EC||_1
+                                   + lambda_ISO ||x_ISO||_1,
+            s.t. x >= 0.
 
-    If \lambda=0 the solver is equivalent to NNLS.
+    If lambda*=0 the solver is equivalent to NNLS.
 
-    The regularisation term can be set only on the IC compartment selecting
-        regularisation['sizeIC'] = nIC
-    where *nIC is an integer that encodes the number of coefficients related
-    to the intracellular compartment ( x_IC = x[0:nIC] ).
+    The regularisation term must contain all the informations regarding start
+    and size of each compartment. The variables related EC and ISO can be set
+    to None and this results in an L1 regularisation of only the IC compartment.
 
     Parameters
     ----------
