@@ -6,6 +6,27 @@ from math import sqrt
 import sys
 eps = np.finfo(float).eps
 
+def issolver(candidate=''):
+    """
+    Check if this version of COMMIT is endowed with the wanted solver.
+
+    Parameters
+    ----------
+    candidate: string (default="")
+        name of the solver
+
+Returns
+    ----------
+    Boolean if candidate is a non-empty string, otherwise it returns the list of
+    available solvers
+    """
+    if candidate=='':
+        return ['nnls','gnnls','hnnls']
+    elif candidate=='nnls' or candidate=='gnnls' or candidate=='hnnls':
+        return True
+    else:
+        return False
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.profile(False)
