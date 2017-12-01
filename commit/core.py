@@ -610,6 +610,16 @@ class Evaluation :
 
         print '   [ %.1f seconds ]' % ( time.time() - tic )
 
+    def get_y():
+        """
+        Returns a numpy array that corresponds to the 'y' vector of the optimisation problem.
+        NB: this can be run only after having loaded the dictionary and the data.
+        """
+        if self.DICTIONARY is None :
+            raise RuntimeError( 'Dictionary not loaded; call "load_dictionary()" first.' )
+        if self.niiDWI is None :
+            raise RuntimeError( 'Data not loaded; call "load_data()" first.' )
+        return self.niiDWI_img[ self.DICTIONARY['MASK_ix'], self.DICTIONARY['MASK_iy'], self.DICTIONARY['MASK_iz'], : ].flatten().astype(np.float64)
 
     def fit( self, solver='nnls', tol_fun = 1e-3, tol_x = 1e-6, max_iter = 100, verbose = 1, x0 = None, regularisation = {} ) :
         """Fit the model to the data.
