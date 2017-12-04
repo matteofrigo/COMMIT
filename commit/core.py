@@ -610,7 +610,7 @@ class Evaluation :
 
         print '   [ %.1f seconds ]' % ( time.time() - tic )
 
-    def get_y():
+    def get_y( self ):
         """
         Returns a numpy array that corresponds to the 'y' vector of the optimisation problem.
         NB: this can be run only after having loaded the dictionary and the data.
