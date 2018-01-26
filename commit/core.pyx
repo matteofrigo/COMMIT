@@ -621,7 +621,7 @@ cdef class Evaluation :
             raise RuntimeError( 'Data not loaded; call "load_data()" first.' )
         return self.niiDWI_img[ self.DICTIONARY['MASK_ix'], self.DICTIONARY['MASK_iy'], self.DICTIONARY['MASK_iz'], : ].flatten().astype(np.float64)
 
-    def fit( self, tol_fun = 1e-3, tol_x = 1e-6, max_iter = 100, verbose = 1, x0 = None, regularisation = None ) :
+    def fit( self, tol_fun = 1e-3, tol_x = 1e-6, max_iter = 100, verbose = 1, x0 = None, regularisation = None, debug_mode = False, debug_parameters = None) :
         """Fit the model to the data.
 
         Parameters
@@ -668,7 +668,7 @@ cdef class Evaluation :
         t = time.time()
         print '\n-> Fit model'
 
-        self.x, opt_details = commit.solvers.solve(self.get_y(), self.A, self.A.T, tol_fun = tol_fun, tol_x = tol_x, max_iter = max_iter, verbose = verbose, x0 = x0, regularisation = regularisation)
+        self.x, opt_details = commit.solvers.solve(self.get_y(), self.A, self.A.T, tol_fun = tol_fun, tol_x = tol_x, max_iter = max_iter, verbose = verbose, x0 = x0, regularisation = regularisation, debug_mode, debug_parameters)
 
         self.CONFIG['optimization']['fit_details'] = opt_details
         self.CONFIG['optimization']['fit_time'] = time.time()-t

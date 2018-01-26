@@ -234,7 +234,7 @@ def regularisation2omegaprox(regularisation):
 
     return omega, prox
 
-def solve(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, x0 = None, regularisation = None):
+def solve(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, x0 = None, regularisation = None, debug_mode = False, debug_parameters = None):
     """
     Solve the regularised least squares problem
 
@@ -258,7 +258,12 @@ def solve(y, A, At, tol_fun = 1e-4, tol_x = 1e-6, max_iter = 1000, verbose = 1, 
     if x0 is None:
         x0 = np.ones(A.shape[1])
 
-    return fista( y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, prox)
+    if not debug_mode:
+        return fista( y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, prox)
+    else:
+        return fista_debug( y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, prox, debug_parameters)
+
+
 
 def fista( y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, proximal) :
     """
@@ -382,6 +387,200 @@ def fista( y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, proximal) :
         told = t
         qfval = 0.5 * np.linalg.norm(res)**2
 
+
+    if verbose >= 1 :
+        print "< Stopping criterion: %s >" % criterion
+
+    opt_details = {}
+    opt_details['residual'] = res_norm
+    opt_details['cost_function'] = curr_obj
+    opt_details['abs_cost'] = abs_obj
+    opt_details['rel_cost'] = rel_obj
+    opt_details['abs_x'] = abs_x
+    opt_details['rel _x'] = rel_x
+    opt_details['iterations'] = iter
+    opt_details['stopping_criterion'] = criterion
+
+    return x, opt_details
+
+def fista_debug( y, A, At, tol_fun, tol_x, max_iter, verbose, x0, omega, proximal, debug_parameters) :
+    """
+    Debug mode for the fista solver.
+
+    Notes
+    -----
+    Author: Matteo Frigo - athena @ inria
+    """
+    import cPickle
+    from os.path import join as pjoin
+    verbose = True
+
+    debug_parameters = {} if debug_parameters is None else debug_parameters
+
+    dosave       = False if debug_parameters.get('dosave') is None else debug_parameters.get('dosave')
+    savestep     = 10 if debug_parameters.get('savestep') is None else debug_parameters.get('savestep')
+    mit          = None if debug_parameters.get('commit_evaluation') is None else debug_parameters.get('commit_evaluation')
+    savepath     = './debug_mode' if mit is None else pjoin(mit.get_config('TRACKING_path'), 'debug_mode')
+    track_nzeros = False if debug_parameters.get('track_nzeros') is None else debug_parameters.get('track_nzeros')
+    if track_nzeros:
+        import matplotlib.pyplot as plt
+        plt.ion()
+        fig = plt.figure()
+        plt.axis([0,max_iter,0,A.shape[1]])
+        i = 0
+        x = list()
+        y = list()
+
+    print '#################'
+    print 'DEBUG MODE SOLVER'
+    print '#################'
+    print 'Shape of the dictionary: \t%s' % A.shape
+    print 'Length of x0:\t%s' % x0.shape
+    print 'Length of y:\t%s' % y.shape
+    print
+    print 'Maximum number of iterations:\t%s' % max_iter
+
+    print 'Verbose mode: on'
+    print 'Testing omega ...'
+    testx = np.ones(A.shape[1])
+    try:
+        tmp = omega(testx)
+        del tmp
+        print '\tTest passed'
+    except:
+        print '\tCannot call Omega. Check its definition'
+        return
+    print 'Testing proximal ...'
+    try:
+        tmp = proximal(testx)
+        del tmp
+        print '\tTest passed'
+    except:
+        print '\tCannot call Proximal. Check its definition'
+        return
+    del testx
+
+
+    # Initialization
+    res = -y.copy()
+    xhat = x0.copy()
+    x = np.zeros_like(xhat)
+    res += A.dot(xhat)
+    xhat = proximal( xhat )
+    reg_term = omega( xhat )
+    prev_obj = 0.5 * np.linalg.norm(res)**2 + reg_term
+
+    told = 1
+    beta = 0.9
+    print 'Backtracking multiplication constant: %s' % beta
+    prev_x = xhat.copy()
+    grad = np.asarray(At.dot(res))
+    qfval = prev_obj
+
+    # Step size computation
+    L = ( np.linalg.norm( A.dot(grad) ) / np.linalg.norm(grad) )**2
+    mu = 1.9 / L
+
+    # Main loop
+    if verbose >= 1 :
+        print
+        print "      |     ||Ax-y||     |  Cost function    Abs error      Rel error    |     Abs x          Rel x     "
+        print "------|------------------|-----------------------------------------------|------------------------------"
+    end_regression = False
+    iter = 1
+    while True :
+        if verbose >= 1 :
+            print "%4d  |" % iter,
+            sys.stdout.flush()
+
+        # Smooth step
+        x = xhat - mu*grad
+
+        # Non-smooth step
+        x = proximal( x )
+        reg_term_x = omega( x )
+
+        # Check stepsize
+        tmp = x-xhat
+        q = qfval + np.real( np.dot(tmp,grad) ) + 0.5/mu * np.linalg.norm(tmp)**2 + reg_term_x
+        res = A.dot(x) - y
+        res_norm = np.linalg.norm(res)
+        curr_obj = 0.5 * res_norm**2 + reg_term_x
+
+        # Backtracking
+        while curr_obj > q :
+            print "BT  |",
+            sys.stdout.flush()
+
+            # Smooth step
+            mu = beta*mu
+            x = xhat - mu*grad
+
+            # Non-smooth step
+            x = proximal( x )
+            reg_term_x = omega( x )
+
+            # Check stepsize
+            tmp = x-xhat
+            q = qfval + np.real( np.dot(tmp,grad) ) + 0.5/mu * np.linalg.norm(tmp)**2 + reg_term_x
+            res = A.dot(x) - y
+            res_norm = np.linalg.norm(res)
+            curr_obj = 0.5 * res_norm**2 + reg_term_x
+            print "  %13.7e  |  %13.7e  %13.7e  %13.7e  |  %13.7e  %13.7e" % ( res_norm, curr_obj, abs_obj, rel_obj, abs_x, rel_x )
+
+        # Global stopping criterion
+        abs_obj = abs(curr_obj - prev_obj)
+        rel_obj = abs_obj / curr_obj
+        abs_x   = np.linalg.norm(x - prev_x)
+        rel_x   = abs_x / ( np.linalg.norm(x) + eps )
+        if verbose >= 1 :
+            print "  %13.7e  |  %13.7e  %13.7e  %13.7e  |  %13.7e  %13.7e" % ( res_norm, curr_obj, abs_obj, rel_obj, abs_x, rel_x )
+
+        if abs_obj < eps :
+            criterion = "Absolute tolerance on the objective"
+            end_regression = True
+        elif rel_obj < tol_fun :
+            criterion = "Relative tolerance on the objective"
+            end_regression = True
+        elif abs_x < eps :
+            criterion = "Absolute tolerance on the unknown"
+            end_regression = True
+        elif rel_x < tol_x :
+            criterion = "Relative tolerance on the unknown"
+            end_regression = True
+        elif iter >= max_iter :
+            criterion = "Maximum number of iterations"
+            end_regression = True
+
+        if end_regression:
+            break
+
+        # FISTA update
+        t = 0.5 * ( 1 + sqrt(1+4*told**2) )
+        xhat = x + (told-1)/t * (x - prev_x)
+
+        # Gradient computation
+        res = A.dot(xhat) - y
+        xarr = np.asarray(x)
+
+        grad = np.asarray(At.dot(res))
+
+        if dosave and iter//savestep == 0:
+            np.savetxt(pjoin(savepath,'x_%d.txt' % iter), x, header='After %d iterations' % iter )
+
+        if track_nzeros:
+            x.append(iter);
+            y.append(np.count_nonzero(x));
+            plt.scatter(iter, np.count_nonzero(x))
+            plt.show()
+            plt.pause(1e-5)
+
+        # Update variables
+        iter += 1
+        prev_obj = curr_obj
+        prev_x = x.copy()
+        told = t
+        qfval = 0.5 * np.linalg.norm(res)**2
 
     if verbose >= 1 :
         print "< Stopping criterion: %s >" % criterion
